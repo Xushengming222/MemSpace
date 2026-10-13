@@ -437,7 +437,6 @@ namespace MemoryEase
                     File.AppendAllText(path, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + details + "\r\n\r\n", Encoding.UTF8);
                 } catch (Exception e) { SetStatus(status.Text + "；日志保存失败：" + e.Message); }
                 if (details.StartsWith("强力释放未全部完成", StringComparison.Ordinal)) StopStrongSession();
-                if (!automatic) ShowTextInfo("强力释放结果", details);
             } catch (System.ComponentModel.Win32Exception e) { if (!IsDisposed) SetStatus(e.NativeErrorCode == 1223 ? "已取消管理员授权，未执行强力释放。" : "强力释放失败：" + e.Message); }
             catch (Exception e) { StopStrongSession(); if (!IsDisposed) SetStatus("强力释放失败：" + e.Message); }
             finally { busy = false; if (!IsDisposed) { release.Enabled = selectedRelease.Enabled = strongRelease.Enabled = true; UpdateAuthorization(); } }
