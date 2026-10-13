@@ -2,13 +2,13 @@
 
 一个从零编写的 Windows 内存诊断与按需释放工具。C# + WinForms + Windows 原生 API，运行依赖 .NET Framework 4.8（现代 Windows 10 / 11 通常已包含），无需安装 Python、Node 或其他第三方运行时。
 
-1.3.1 取消强力释放完成后的结果弹窗，结果保留在状态栏与日志。包含自动强力释放、持续识别的自动排除、勾选应用的排除名单、随窗口重新排布、应用汇总、活动保护、启动项状态与三档字号。默认正文为 13.5 磅，相当于 100% 屏幕缩放下 18 像素。
+1.3.2 将显示器 DPI 声明内置于 EXE，修复单独下载程序时文字被 Windows 放大而模糊的问题。强力释放结果保留在状态栏与日志。包含自动强力释放、持续识别的自动排除、勾选应用的排除名单、随窗口重新排布、应用汇总、活动保护、启动项状态与三档字号。默认正文为 13.5 磅，相当于 100% 屏幕缩放下 18 像素。
 
 ## 运行
 
 可以直接 [下载 MemSpace.exe](https://github.com/Xushengming222/MemSpace/releases/latest/download/MemSpace.exe)，双击启动。
 
-[最新版本下载页面](https://github.com/Xushengming222/MemSpace/releases/latest) 同时提供 `MemSpace-版本号.zip`，包含程序、高 DPI 配置、使用说明和许可证。使用 ZIP 时保留 `MemSpace.exe.config` 与 EXE 在同一目录，以启用多显示器 DPI 配置。普通用户权限即可使用，强力释放时才申请管理员授权。
+[最新版本下载页面](https://github.com/Xushengming222/MemSpace/releases/latest) 同时提供 `MemSpace-版本号.zip`，包含程序、兼容配置、使用说明和许可证。高 DPI 支持已内置于 EXE，单独下载也能清晰显示；ZIP 中的 `MemSpace.exe.config` 可继续保留。普通用户权限即可使用，强力释放时才申请管理员授权。
 
 需要 Windows 10 / 11 与 .NET Framework 4.8。此程序暂未进行代码签名。使用源码时，请按下方构建步骤生成 `artifacts/MemSpace.exe`；GitHub 的 Source code 压缩包是源码，直接运行请下载版本附件中的 EXE 或便携包。
 
@@ -87,6 +87,8 @@ GitHub Actions 在 Windows 上自动检查源码编译和便携包生成；涉�
 
 1.3.0 追加复用授权会话的多请求通信、关闭管道后助手退出、未授权与未勾选时禁止自动强力、两种自动模式优先级、识别目录边界和应用家族、排除勾选保留旧名单，以及新增偏好序列化。界面检查还覆盖三档字号下的应用搜索/勾选窗口、授权状态显示与关闭复选框结束会话。通信测试使用专用探针，探针不调用系统内存操作；开发测试未真正触发自动强力清理。
 
+1.3.2 的测试同时运行带配置版本和移除配置的单 EXE 版本，断言窗口为每显示器 DPI 感知、窗口与绘图表面 DPI 一致，避免把虚拟化的 96 DPI 误判为正常。在 150% 桌面缩放下，两者均报告 144 DPI 与 PerMonitorV2；回归四个页面、三档字号、五种窗口大小、应用选择和托盘。尚未在不同 DPI 的双显示器之间实测切换。
+
 以下诊断与界面测试参数不会改变设置或释放现有进程：
 
 ```powershell
@@ -104,3 +106,5 @@ Start-Process $app -ArgumentList '--smoke-test "E:\path\ui"' -Wait
 根据用户提供的本地 PCL 2.13.1.1 EXE 完成了只读 IL 分析，见 [PCL 内存优化分析](docs/PCL内存优化分析.md)。分析工具只读取程序集元数据和字节码，没有执行 PCL 或其内存优化，也未修改原 EXE。1.2.0 根据这些已确认的原生调用独立实现了同类型的系统级强力释放，没有复制 PCL 程序码。
 
 Windows API 依据：[EmptyWorkingSet](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-emptyworkingset)、[Working Set](https://learn.microsoft.com/en-us/windows/win32/memory/working-set)、[GetPerformanceInfo](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getperformanceinfo)、[GlobalMemoryStatusEx](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-globalmemorystatusex)、[IsProcessCritical](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-isprocesscritical)。
+
+DPI 清晰显示依据：[Windows 应用 DPI 感知清单](https://learn.microsoft.com/en-us/windows/win32/hidpi/setting-the-default-dpi-awareness-for-a-process)。EXE 内置清单覆盖单文件下载场景；已有 WinForms 配置继续关闭自动尺寸调整，由应用按实际 DPI 排布控件。

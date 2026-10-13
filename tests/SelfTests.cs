@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using System.Windows.Forms;
 using System.Xml.Serialization;
 
 namespace MemoryEase
@@ -14,6 +15,18 @@ namespace MemoryEase
         private static readonly List<string> Results = new List<string>();
         private static void Assert(bool condition, string name)
         { if (!condition) throw new InvalidOperationException("FAIL: " + name); Results.Add("PASS: " + name); }
+        internal static string VerifyWindowDpi(Control window)
+        {
+            IntPtr context = Native.GetWindowDpiAwarenessContext(window.Handle);
+            uint dpi = Native.GetDpiForWindow(window.Handle);
+            Assert(Native.GetAwarenessFromDpiAwarenessContext(context) == 2,
+                "window is per-monitor DPI aware, preventing Windows bitmap enlargement even without an EXE config");
+            using (var graphics = window.CreateGraphics())
+                Assert(dpi > 0 && Math.Abs(graphics.DpiX - dpi) < 0.01 && Math.Abs(graphics.DpiY - dpi) < 0.01,
+                    "window and drawing surface agree on actual monitor DPI");
+            return "DPI=" + dpi + Environment.NewLine + "Awareness=" +
+                (Native.AreDpiAwarenessContextsEqual(context, new IntPtr(-4)) ? "PerMonitorV2" : "PerMonitor");
+        }
         private static ProcessRow Row()
         { return new ProcessRow { Id = 100, Name = "idle-app", OwnerSid = "test-sid", Session = 1, CriticalKnown = true, WorkingSet = 100UL * 1048576 }; }
         private static ProcessRow AppRow(int id, string name, string path, int parent, long creation)
@@ -204,6 +217,9 @@ namespace MemoryEase
                 File.WriteAllText(ready + ".touch", "touch");
                 for (int i = 0; i < 100 && !File.Exists(ready + ".done"); i++) Thread.Sleep(100);
                 Assert(File.Exists(ready + ".done") && File.ReadAllText(ready + ".done") == "OK", "worker data survives release and can be paged back in");
+                // Creating a control installs the WinForms synchronization context. Do this
+                // after blocking async checks, which run without an application message loop.
+                using (var window = new Form()) VerifyWindowDpi(window);
                 string report = Diagnostics.Report(m, rows, Diagnostics.StartupItems());
                 Assert(report.Contains("私有提交") && report.Contains("计划任务"), "diagnostic report includes measurement limits");
                 File.WriteAllLines(output, Results, Encoding.UTF8); return 0;

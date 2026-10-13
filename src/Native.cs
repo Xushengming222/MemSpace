@@ -53,6 +53,9 @@ namespace MemoryEase
         [DllImport("kernel32.dll", EntryPoint = "Process32FirstW", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool Process32First(ProcessHandle handle, ref ProcessEntry entry);
         [DllImport("kernel32.dll", EntryPoint = "Process32NextW", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool Process32Next(ProcessHandle handle, ref ProcessEntry entry);
         [DllImport("user32.dll")] internal static extern uint GetDpiForWindow(IntPtr window);
+        [DllImport("user32.dll")] internal static extern IntPtr GetWindowDpiAwarenessContext(IntPtr window);
+        [DllImport("user32.dll")] internal static extern int GetAwarenessFromDpiAwarenessContext(IntPtr context);
+        [DllImport("user32.dll")] internal static extern bool AreDpiAwarenessContextsEqual(IntPtr first, IntPtr second);
         internal static Dictionary<int, int> Parents()
         {
             var result = new Dictionary<int, int>();

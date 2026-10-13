@@ -521,7 +521,8 @@ namespace MemoryEase
             if (processes.Rows.Count == 0 || !(processes.Rows[0].Tag is ProcessRow)) throw new InvalidOperationException("进程视图切换失败");
             groupApplications.Checked = true;
             if (!(processes.Rows[0].Tag is ApplicationGroup)) throw new InvalidOperationException("应用汇总视图切换失败");
-            File.WriteAllText(Path.Combine(directory, "layout.txt"), "DPI=" + monitorDpi);
+            File.WriteAllText(Path.Combine(directory, "layout.txt"), SelfTests.VerifyWindowDpi(this));
+            if (Native.GetDpiForWindow(Handle) != monitorDpi) throw new InvalidOperationException("布局 DPI 与窗口 DPI 不一致");
             if (processRows.Count == 0) throw new InvalidOperationException("进程列表为空");
             foreach (int scale in new[] { 100, 125, 150 }) {
                 settings.FontScale = scale; ApplyAppearance(true); await RefreshAsync(); await LoadStartupAsync();
