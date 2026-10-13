@@ -6,9 +6,11 @@
 
 ## 运行
 
-在 [最新版本下载页面](https://github.com/Xushengming222/MemSpace/releases/latest) 下载 `MemSpace-版本号.zip`，解压后双击 `MemSpace.exe`。保留 `MemSpace.exe.config` 与 EXE 在同一目录。普通用户权限即可使用，强力释放时才申请管理员授权。
+可以直接 [下载 MemSpace.exe](https://github.com/Xushengming222/MemSpace/releases/latest/download/MemSpace.exe)，双击启动。
 
-需要 Windows 10 / 11 与 .NET Framework 4.8。此程序暂未进行代码签名。使用源码时，请按下方构建步骤生成 `artifacts/MemSpace.exe`；GitHub 的 Source code 压缩包是源码，直接运行请下载版本附件中的便携包。
+[最新版本下载页面](https://github.com/Xushengming222/MemSpace/releases/latest) 同时提供 `MemSpace-版本号.zip`，包含程序、高 DPI 配置、使用说明和许可证。使用 ZIP 时保留 `MemSpace.exe.config` 与 EXE 在同一目录，以启用多显示器 DPI 配置。普通用户权限即可使用，强力释放时才申请管理员授权。
+
+需要 Windows 10 / 11 与 .NET Framework 4.8。此程序暂未进行代码签名。使用源码时，请按下方构建步骤生成 `artifacts/MemSpace.exe`；GitHub 的 Source code 压缩包是源码，直接运行请下载版本附件中的 EXE 或便携包。
 
 建议先打开“开机排查”，通过 Windows 启动设置关闭不需要的第三方常驻程序；重启后在同样的软件运行条件下比较。“释放后台内存”用于临时缓解压力，无法保证把 10 GB 降到某个指定数字。
 
