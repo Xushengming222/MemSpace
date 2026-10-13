@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <Platform Condition="'$(Platform)' == ''">AnyCPU</Platform>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>MemoryEase</RootNamespace>
+    <AssemblyName>MemSpace</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <ApplicationManifest>src\app.manifest</ApplicationManifest>
+    <AppConfig>src\App.config</AppConfig>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <Optimize>true</Optimize>
+    <Prefer32Bit>false</Prefer32Bit>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System"/><Reference Include="System.Core"/><Reference Include="System.Drawing"/>
+    <Reference Include="System.Windows.Forms"/><Reference Include="System.Xml"/>
+    <Compile Include="src\*.cs"/><Compile Include="tests\SelfTests.cs"/>
+    <None Include="src\App.config"/><None Include="src\app.manifest"/>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets"/>
+</Project>
