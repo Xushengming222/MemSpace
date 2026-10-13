@@ -18,6 +18,7 @@ namespace MemoryEase
         private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         private readonly PressureGate gate = new PressureGate();
         private readonly Stopwatch clock = Stopwatch.StartNew();
+        private readonly MemoryHistory memoryHistory = new MemoryHistory();
         private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 2000 };
         private NotifyIcon tray;
         private Panel pages;
@@ -29,7 +30,7 @@ namespace MemoryEase
         private DataGridView processes, startups;
         private TextBox search;
         private Button release, selectedRelease, strongRelease, authorize;
-        private CheckBox auto, autoStrong, autoExclusions, login, startupOnce;
+        private CheckBox auto, autoStrong, autoExclusions, gameProtect, login, startupOnce;
         private StrongSession strongSession;
         private NumericUpDown threshold;
         private RadioButton groupApplications, groupProcesses, font100, font125, font150;
@@ -39,7 +40,7 @@ namespace MemoryEase
         private bool rebuilding;
         private MemorySnapshot memory;
         private List<ProcessRow> processRows = new List<ProcessRow>();
-        private bool busy, scanning, startupChecked, loadingSettings, restoringWindow;
+        private bool busy, scanning, refreshing, automaticPaused, startupChecked, loadingSettings, restoringWindow;
         private int currentPage;
         private long lastScan = -30000;
         internal MainForm(AppSettings settings, bool trayLaunch, bool startupLaunch, bool isolated)
@@ -56,10 +57,10 @@ namespace MemoryEase
             timer.Tick += async delegate { await RefreshAsync(); };
             Shown += async delegate {
                 if (trayLaunch && !isolated) HideToTray();
-                await RefreshAsync(); timer.Start();
+                UpdateRefreshInterval(); await RefreshAsync(); if (!isolated) timer.Start();
             };
             FormClosing += delegate { timer.Stop(); lifetime.Cancel(); StopStrongSession(); };
-            FormClosed += delegate { timer.Dispose(); lifetime.Dispose(); if (tray != null) tray.Dispose(); };
+            FormClosed += delegate { timer.Dispose(); lifetime.Dispose(); DisposeTray(); };
         }
         protected override void WndProc(ref Message message)
         {
@@ -90,7 +91,7 @@ namespace MemoryEase
                 ClientSize = rebuild ? previousSize : new Size(Math.Min((int)(1200 * layoutScale), area.Width - 48), Math.Min((int)(880 * layoutScale), area.Height - 100));
                 Location = new Point(Math.Max(area.Left, Math.Min(Left, area.Right - Width)), Math.Max(area.Top, Math.Min(Top, area.Bottom - Height)));
                 SelectPage(selectedPage); FillProcesses(); dashboard.Snapshot = memory;
-            } finally { ResumeLayout(true); rebuilding = false; release.Enabled = selectedRelease.Enabled = strongRelease.Enabled = !busy; RememberSizes(this); layoutReady = true; Reflow(); if (!isolated && IsHandleCreated) timer.Start(); }
+            } finally { ResumeLayout(true); rebuilding = false; release.Enabled = selectedRelease.Enabled = strongRelease.Enabled = !busy; RememberSizes(this); layoutReady = true; Reflow(); UpdateRefreshInterval(); if (!isolated && IsHandleCreated) timer.Start(); }
         }
         private void BuildLayout()
         {
@@ -150,7 +151,7 @@ namespace MemoryEase
             commitValue = Metric(metrics, 0, "已提交 / 上限", "包含 RAM 和分页文件");
             poolValue = Metric(metrics, 1, "非分页池", "驱动和内核占用");
             reservedValue = Metric(metrics, 2, "硬件保留（估算）", "安装容量减可用总量"); page.Controls.Add(metrics, 0, 3);
-            history = new HistoryChart { Dock = DockStyle.Fill, Margin = new Padding(0, 4, 0, 10) }; page.Controls.Add(history, 0, 4);
+            history = new HistoryChart { History = memoryHistory, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 0, 10) }; page.Controls.Add(history, 0, 4);
             var card = new Card { Dock = DockStyle.Fill, Padding = new Padding(18, 12, 18, 12), Margin = Padding.Empty };
             advice = new Label { Dock = DockStyle.Top, Font = Theme.Font(9), ForeColor = Theme.Muted, Text = "正在读取诊断建议…" };
             advice.TextChanged += delegate { Reflow(); };
@@ -246,6 +247,7 @@ namespace MemoryEase
             content.Controls.Add(fontRow);
             auto = Check("自动释放后台内存", settings.AutoRelease); content.Controls.Add(auto);
             autoStrong = Check("自动强力释放（需管理员授权）", settings.AutoStrongRelease); content.Controls.Add(autoStrong);
+            gameProtect = Check("游戏 / 全屏时暂停自动强力", settings.GameProtection); content.Controls.Add(gameProtect);
             var authRow = new FlowLayoutPanel { Dock = DockStyle.Top, Margin = new Padding(0, 0, 0, 8) };
             authorize = Theme.Button("授权管理员"); authorize.Width = 160;
             authorize.Click += async delegate { autoStrong.Checked = true; await SaveSettingsAsync(); };
@@ -289,57 +291,52 @@ namespace MemoryEase
             if (index == 1 && processes != null) ResetGridFonts(processes);
             if (index == 2 && startups != null) ResetGridFonts(startups);
             if (compactNavigation != null) compactNavigation.Text = "菜单 · " + nav[index].Text;
+            if (index == 0) UpdateHome();
+            if (index == 1) FillProcesses();
+            if (index == 3) UpdateAuthorization();
             Reflow();
         }
-        private void BuildTray()
+        private void UpdateHome()
         {
-            tray = new NotifyIcon { Icon = Program.AppIcon, Text = "MemSpace · 内存管家", Visible = false };
-            var menu = new ContextMenuStrip();
-            menu.Items.Add("打开内存管家", null, delegate { ShowWindow(); });
-            menu.Items.Add("释放后台内存", null, async delegate { await ReleaseAsync(null, false); });
-            menu.Items.Add("强力释放（管理员）", null, async delegate { await ReleaseStrongAsync(); });
-            menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("退出", null, delegate { Close(); });
-            tray.ContextMenuStrip = menu; tray.DoubleClick += delegate { ShowWindow(); };
-        }
-        private void HideToTray()
-        {
-            if (tray == null) return;
-            tray.Visible = true; Hide();
-        }
-        private void ShowWindow()
-        {
-            restoringWindow = true;
-            try { Show(); WindowState = FormWindowState.Normal; Activate(); if (tray != null) tray.Visible = false; }
-            finally { restoringWindow = false; }
+            if (memory == null || !RefreshPolicy.Home(WindowVisible, currentPage)) return;
+            dashboard.Snapshot = memory; dashboard.Invalidate(); history.Invalidate();
+            string commit = memory.PerformanceAvailable ? (memory.Commit / 1073741824.0).ToString("0.0") + " / " + (memory.CommitLimit / 1073741824.0).ToString("0.0") + " GB" : "无法读取";
+            string pool = memory.PerformanceAvailable ? (memory.NonpagedPool / 1048576.0).ToString("0") + " MB" : "无法读取";
+            string reserved = memory.Installed >= memory.Total ? MemorySnapshot.Size(memory.Installed - memory.Total) : "未知";
+            bool remeasure = commit.Length != commitValue.Text.Length || pool.Length != poolValue.Text.Length || reserved.Length != reservedValue.Text.Length;
+            commitValue.Text = commit; poolValue.Text = pool; reservedValue.Text = reserved; advice.Text = Diagnostics.ShortAdvice(memory);
+            if (remeasure) Reflow();
         }
         private async Task RefreshAsync()
         {
-            if (IsDisposed) return;
+            if (IsDisposed || refreshing) return; refreshing = true;
             try {
                 if (!isolated) RecentActivity.ObserveForeground();
-                memory = MemorySnapshot.Read(); dashboard.Snapshot = memory; dashboard.Invalidate();
-                history.Values.Add(memory.UsedPercent); if (history.Values.Count > 60) history.Values.RemoveAt(0); if (Visible) history.Invalidate();
-                commitValue.Text = memory.PerformanceAvailable ? (memory.Commit / 1073741824.0).ToString("0.0") + " / " + (memory.CommitLimit / 1073741824.0).ToString("0.0") + " GB" : "无法读取";
-                poolValue.Text = memory.PerformanceAvailable ? (memory.NonpagedPool / 1048576.0).ToString("0") + " MB" : "无法读取";
-                reservedValue.Text = memory.Installed >= memory.Total ? MemorySnapshot.Size(memory.Installed - memory.Total) : "未知";
-                advice.Text = Diagnostics.ShortAdvice(memory);
-                Reflow();
-                if (tray != null) tray.Text = "MemSpace · " + memory.UsedPercent.ToString("0") + "% · 可用 " + MemorySnapshot.Size(memory.Available);
-                UpdateAuthorization();
+                UpdateRefreshInterval(); memory = MemorySnapshot.Read(); memoryHistory.Add(clock.ElapsedMilliseconds, memory.UsedPercent);
+                ReadGameProtection();
                 var mode = AutomaticRelease.Mode(settings, strongSession != null && strongSession.Ready);
-                if (!busy && gate.Observe(mode != AutomaticMode.Disabled, memory.UsedPercent, settings.Threshold, clock.ElapsedMilliseconds)) {
+                bool paused = GameProtection.PausesStrong(settings, mode, gameReason), released = false, pauseChanged = paused != automaticPaused;
+                automaticPaused = paused;
+                if (!busy && gate.Observe(mode != AutomaticMode.Disabled && !paused, memory.UsedPercent, settings.Threshold, clock.ElapsedMilliseconds)) {
                     if (mode == AutomaticMode.Strong) await ReleaseStrongAsync(true); else await ReleaseAsync(null, true);
+                    released = true;
                 }
                 if (!startupChecked && startupLaunch && clock.ElapsedMilliseconds >= 120000)
                 {
                     startupChecked = true;
-                    if (settings.StartupRelease && memory.UsedPercent >= settings.Threshold && !busy && gate.CanAttempt(clock.ElapsedMilliseconds)) {
+                    if (settings.StartupRelease && !paused && memory.UsedPercent >= settings.Threshold && !busy && gate.CanAttempt(clock.ElapsedMilliseconds)) {
                         if (mode == AutomaticMode.Strong) await ReleaseStrongAsync(true); else await ReleaseAsync(null, true);
+                        released = true;
                     }
                 }
-                if (Visible && currentPage == 1 && !busy && clock.ElapsedMilliseconds - lastScan >= 10000) await ScanAsync();
-                if (!busy && status.Text == "正在读取内存状态…") status.Text = "已连接 · 自动释放" + (mode == AutomaticMode.Strong ? "：强力" : mode == AutomaticMode.Background ? "：后台" : "关闭");
+                if (IsDisposed) return;
+                if (released) { memory = MemorySnapshot.Read(); memoryHistory.Add(clock.ElapsedMilliseconds, memory.UsedPercent); }
+                UpdateHome(); UpdateTrayState(); if (WindowVisible && currentPage == 3) UpdateAuthorization();
+                if (RefreshPolicy.Processes(WindowVisible, currentPage, busy, clock.ElapsedMilliseconds - lastScan)) await ScanAsync();
+                if (!busy && (status.Text == "正在读取内存状态…" || status.Text.StartsWith("游戏保护 ·", StringComparison.Ordinal) || pauseChanged))
+                    status.Text = paused ? "游戏保护 · 自动强力暂停" : "已连接 · 自动释放" + (mode == AutomaticMode.Strong ? "：强力" : mode == AutomaticMode.Background ? "：后台" : "关闭");
             } catch (Exception e) { SetStatus("读取失败：" + e.Message); }
+            finally { refreshing = false; }
         }
         private async Task ScanAsync()
         {
@@ -350,7 +347,7 @@ namespace MemoryEase
         }
         private void FillProcesses()
         {
-            if (processes == null || loadingSettings || busy) return;
+            if (processes == null || loadingSettings || busy || (!isolated && !(WindowVisible && currentPage == 1))) return;
             object selected = processes.CurrentRow == null ? null : processes.CurrentRow.Tag;
             string selectedKey = selected is ApplicationGroup ? ((ApplicationGroup)selected).Key : selected is ProcessRow ? RecentActivity.Identity((ProcessRow)selected) : "";
             var direction = processes.SortOrder; var sort = processes.SortedColumn;
@@ -400,6 +397,7 @@ namespace MemoryEase
         private async Task ReleaseAsync(List<ProcessRow> selected, bool automatic)
         {
             if (busy || isolated) return; busy = true; release.Enabled = selectedRelease.Enabled = strongRelease.Enabled = false;
+            UpdateTrayState();
             gate.MarkManual(clock.ElapsedMilliseconds); SetStatus("正在检查闲置程序并释放工作集…");
             try {
                 var result = await Task.Run(() => selected == null ? MemoryService.ReleaseAsync(settings, null, lifetime.Token) : MemoryService.ReleaseSelectionAsync(settings, selected, lifetime.Token));
@@ -409,7 +407,7 @@ namespace MemoryEase
                 if (tray != null && !Visible && !automatic) tray.ShowBalloonTip(4000, "内存释放完成", result.Summary(), ToolTipIcon.Info);
             } catch (OperationCanceledException) { }
               catch (Exception e) { if (!IsDisposed) SetStatus("释放失败：" + e.Message); }
-            finally { busy = false; if (!IsDisposed) release.Enabled = selectedRelease.Enabled = strongRelease.Enabled = true; }
+            finally { busy = false; if (!IsDisposed) { release.Enabled = selectedRelease.Enabled = strongRelease.Enabled = true; UpdateTrayState(); } }
             if (!IsDisposed) await RefreshAsync();
         }
         private void AppendLog(ReleaseResult result)
@@ -421,6 +419,12 @@ namespace MemoryEase
         }
         private async Task ReleaseStrongAsync(bool automatic = false)
         {
+            if (automatic) {
+                ReadGameProtection();
+                if (GameProtection.PausesStrong(settings, AutomaticMode.Strong, gameReason)) {
+                    gate.Observe(false, 0, settings.Threshold, clock.ElapsedMilliseconds); SetStatus("游戏保护 · 自动强力暂停"); UpdateTrayState(); return;
+                }
+            }
             if (automatic && (strongSession == null || !strongSession.Ready)) return;
             if (busy || isolated) return; busy = true; release.Enabled = selectedRelease.Enabled = strongRelease.Enabled = false;
             UpdateAuthorization();
@@ -467,6 +471,7 @@ namespace MemoryEase
                 bool changed = settings.FontScale != newScale; settings.FontScale = newScale;
                 settings.AutoRelease = auto.Checked; settings.Threshold = (int)threshold.Value;
                 settings.AutoStrongRelease = autoStrong.Checked; settings.AutoExclusions = autoExclusions.Checked;
+                settings.GameProtection = gameProtect.Checked; ReadGameProtection(); UpdateTrayState();
                 settings.StartupRelease = startupOnce.Checked;
                 if (StartupRegistration.Enabled() != login.Checked) StartupRegistration.Set(login.Checked, Application.ExecutablePath);
                 settings.Save();
@@ -516,7 +521,7 @@ namespace MemoryEase
         internal async Task CaptureViewsAsync(string directory)
         {
             await RefreshAsync(); await ScanAsync(); await LoadStartupAsync();
-            if (autoStrong.Checked || !autoExclusions.Checked) throw new InvalidOperationException("新增自动选项默认状态错误");
+            if (autoStrong.Checked || !autoExclusions.Checked || !gameProtect.Checked) throw new InvalidOperationException("新增自动选项默认状态错误");
             groupProcesses.Checked = true;
             if (processes.Rows.Count == 0 || !(processes.Rows[0].Tag is ProcessRow)) throw new InvalidOperationException("进程视图切换失败");
             groupApplications.Checked = true;
@@ -566,17 +571,67 @@ namespace MemoryEase
             }
             autoStrong.Checked = true; strongSession = await StrongSession.AuthorizeAsync(lifetime.Token, true); UpdateAuthorization();
             if (authorization.Text != "已授权") throw new InvalidOperationException("授权状态未显示");
+            settings.AutoStrongRelease = true; gameReason = "前台游戏"; UpdateAuthorization();
+            if (!authorization.Text.Contains("游戏保护暂停")) throw new InvalidOperationException("游戏保护暂停状态未显示");
+            settings.GameProtection = false; UpdateAuthorization();
+            if (authorization.Text != "已授权") throw new InvalidOperationException("关闭游戏保护未取消暂停状态");
+            settings.GameProtection = true; settings.AutoStrongRelease = false; gameReason = "";
             autoStrong.Checked = false;
             if (strongSession != null || authorization.Text != "未授权") throw new InvalidOperationException("关闭复选框未结束授权会话");
+            using (var fullscreen = new Form { FormBorderStyle = FormBorderStyle.None, ShowInTaskbar = false, StartPosition = FormStartPosition.Manual, Bounds = Screen.FromControl(this).Bounds }) {
+                fullscreen.Show(this); await Task.Delay(100);
+                if (!GameProtection.WindowIsFullScreen(fullscreen.Handle)) throw new InvalidOperationException("真实无边框全屏窗口未识别");
+                fullscreen.FormBorderStyle = FormBorderStyle.Sizable; fullscreen.WindowState = FormWindowState.Maximized; await Task.Delay(100);
+                if (GameProtection.WindowIsFullScreen(fullscreen.Handle)) throw new InvalidOperationException("普通最大化窗口被误判为全屏");
+                fullscreen.Close();
+            }
+            SaveTrayIconPreview(directory);
             await CaptureTrayAsync();
         }
         internal async Task CaptureTrayAsync()
         {
-            if (tray == null) BuildTray(); ShowWindow(); await Task.Delay(100);
+            if (tray == null) BuildTray(); SelectPage(0); ShowWindow(); await Task.Delay(100);
             WindowState = FormWindowState.Minimized; await Task.Delay(100);
             if (Visible || !tray.Visible) throw new InvalidOperationException("最小化未收起到托盘：visible=" + Visible + " tray=" + tray.Visible + " state=" + WindowState);
+            if (timer.Interval != 10000 || numberIcon == null || trayPercentage != TrayIcon.Percentage(memory.UsedPercent)) throw new InvalidOperationException("托盘频率或数字图标错误");
+            string previousHome = commitValue.Text; int invalidations = 0;
+            InvalidateEventHandler invalidated = delegate { invalidations++; }; dashboard.Invalidated += invalidated;
+            try { await RefreshAsync(); if (commitValue.Text != previousHome || invalidations != 0) throw new InvalidOperationException("隐藏概览仍在刷新或重绘"); }
+            finally { dashboard.Invalidated -= invalidated; }
+            Icon retained = numberIcon; UpdateTrayState();
+            if (!object.ReferenceEquals(retained, numberIcon)) throw new InvalidOperationException("不变的百分比图标没有复用");
+            busy = true; UpdateTrayState();
+            if (trayBackground.Enabled || trayStrong.Enabled) throw new InvalidOperationException("忙碌时托盘释放按钮未禁用");
+            busy = false; UpdateTrayState();
+            if (!trayBackground.Enabled || !trayStrong.Enabled || trayStrong.Text != "强力释放") throw new InvalidOperationException("托盘释放按钮未恢复");
+            using (var own = Process.GetCurrentProcess()) {
+                uint gdi = Native.GetGuiResources(own.Handle, 0), users = Native.GetGuiResources(own.Handle, 1);
+                MemorySnapshot original = memory;
+                try {
+                    for (int percentage = 0; percentage <= 100; percentage++) {
+                        memory = new MemorySnapshot { Total = 100, Available = (ulong)(100 - percentage) }; UpdateTrayState();
+                    }
+                    if (Native.GetGuiResources(own.Handle, 0) > gdi + 8 || Native.GetGuiResources(own.Handle, 1) > users + 8)
+                        throw new InvalidOperationException("重复更新托盘图标造成 GUI 资源增长");
+                } finally { memory = original; UpdateTrayState(); }
+            }
             ShowWindow(); await Task.Delay(100);
             if (!Visible || tray.Visible || WindowState != FormWindowState.Normal) throw new InvalidOperationException("托盘恢复窗口失败：visible=" + Visible + " tray=" + tray.Visible + " state=" + WindowState);
+            if (timer.Interval != 2000 || dashboard.Snapshot != memory) throw new InvalidOperationException("恢复窗口未立即更新数据与刷新频率");
+        }
+        private static void SaveTrayIconPreview(string directory)
+        {
+            int[] sizes = { 16, 24, 32, 48 }, values = { 0, 9, 59, 85, 95, 100 };
+            using (var preview = new Bitmap(420, 280)) using (var graphics = Graphics.FromImage(preview))
+            using (var font = new Font("Segoe UI", 12, GraphicsUnit.Pixel)) {
+                graphics.Clear(Color.FromArgb(244, 247, 249));
+                for (int row = 0; row < sizes.Length; row++) {
+                    graphics.DrawString(sizes[row] + "px", font, Brushes.Black, 4, row * 70 + 24);
+                    for (int column = 0; column < values.Length; column++)
+                        using (var icon = TrayIcon.Create(values[column], sizes[row])) graphics.DrawIcon(icon, 56 + column * 58, row * 70 + 12);
+                }
+                preview.Save(Path.Combine(directory, "tray-icons.png"));
+            }
         }
         private static void CheckControlBounds(Control control)
         {

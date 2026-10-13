@@ -37,7 +37,7 @@ namespace MemoryEase
                         form.Shown += async delegate {
                             try {
                                 if (args[0] == "--tray-smoke-test") await form.CaptureTrayAsync(); else await form.CaptureViewsAsync(args[1]);
-                                File.WriteAllText(Path.Combine(args[1], "smoke.txt"), args[0] == "--tray-smoke-test" ? "PASS: minimize hides the taskbar window and shows the tray icon; restore returns the normal window." : "PASS: four views, three font sizes, five window sizes, page bounds, scrolling, tray, searchable application picker and checkbox/session teardown verified. Session probes perform no memory operations; no settings changed.");
+                                File.WriteAllText(Path.Combine(args[1], "smoke.txt"), args[0] == "--tray-smoke-test" ? "PASS: tray minimize/restore, refresh intervals, hidden home suppression, percentage icon reuse/resources and busy menu state verified." : "PASS: four views, three font sizes, five window sizes, DPI, page bounds, scrolling, searchable application picker, session/game pause status and owned fullscreen/maximized windows verified. Tray checks cover minimize/restore, refresh intervals, hidden home suppression, percentage icon reuse/resources and busy menu state. Probes perform no system memory operations; no settings changed.");
                             }
                             catch (Exception e) { exit = 1; File.WriteAllText(Path.Combine(args[1], "smoke.txt"), e.ToString()); }
                             finally { form.Close(); }

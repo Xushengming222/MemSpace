@@ -13,6 +13,7 @@ namespace MemoryEase
         public bool AutoRelease;
         public bool AutoStrongRelease;
         public bool AutoExclusions = true;
+        public bool GameProtection = true;
         public bool StartupRelease;
         public int Threshold = 85;
         public int FontScale = 100;

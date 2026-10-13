@@ -135,7 +135,7 @@ namespace MemoryEase
     }
     internal sealed class HistoryChart : Card
     {
-        internal readonly List<double> Values = new List<double>();
+        internal MemoryHistory History;
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e); var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -145,9 +145,10 @@ namespace MemoryEase
             { g.DrawString(logicalWidth < 160 ? "占用趋势" : "内存占用趋势", font, brush, 12, 10); if (logicalWidth > 480) { string caption = "最近 2 分钟 · 0–100%"; g.DrawString(caption, font, brush, logicalWidth - g.MeasureString(caption, font).Width - 18, 10); } }
             var area = new RectangleF(12, 43, Math.Max(1, logicalWidth - 24), Math.Max(1, logicalHeight - 56));
             using (var grid = new Pen(Theme.Line)) for (int i = 0; i < 3; i++) g.DrawLine(grid, area.Left, area.Top + area.Height * i / 2, area.Right, area.Top + area.Height * i / 2);
-            if (Values.Count < 2) { g.Restore(state); return; }
-            var points = new PointF[Values.Count];
-            for (int i = 0; i < points.Length; i++) points[i] = new PointF(area.Left + area.Width * i / 59, area.Bottom - area.Height * (float)(Values[i] / 100));
+            if (History == null || History.Samples.Count < 2) { g.Restore(state); return; }
+            var samples = History.Samples; long now = samples[samples.Count - 1].At;
+            var points = new PointF[samples.Count];
+            for (int i = 0; i < points.Length; i++) points[i] = new PointF(area.Right - area.Width * (now - samples[i].At) / MemoryHistory.Duration, area.Bottom - area.Height * (float)(samples[i].Usage / 100));
             using (var path = new GraphicsPath()) using (var fill = new SolidBrush(Color.FromArgb(22, Theme.Accent)))
             {
                 path.AddLines(points); path.AddLine(points[points.Length - 1], new PointF(points[points.Length - 1].X, area.Bottom));

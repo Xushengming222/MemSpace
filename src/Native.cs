@@ -56,6 +56,23 @@ namespace MemoryEase
         [DllImport("user32.dll")] internal static extern IntPtr GetWindowDpiAwarenessContext(IntPtr window);
         [DllImport("user32.dll")] internal static extern int GetAwarenessFromDpiAwarenessContext(IntPtr context);
         [DllImport("user32.dll")] internal static extern bool AreDpiAwarenessContextsEqual(IntPtr first, IntPtr second);
+        [StructLayout(LayoutKind.Sequential)] internal struct Rectangle
+        { public int Left, Top, Right, Bottom; }
+        [StructLayout(LayoutKind.Sequential)] internal struct Point
+        { public int X, Y; }
+        [StructLayout(LayoutKind.Sequential)] internal struct MonitorInfo
+        { public uint Size; public Rectangle Bounds, WorkingArea; public uint Flags; }
+        [DllImport("user32.dll")] internal static extern bool GetClientRect(IntPtr window, out Rectangle rectangle);
+        [DllImport("user32.dll")] internal static extern bool ClientToScreen(IntPtr window, ref Point point);
+        [DllImport("user32.dll")] internal static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetClassName(IntPtr window, StringBuilder name, int length);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetWindowText(IntPtr window, StringBuilder text, int length);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr FindWindow(string className, string windowName);
+        [DllImport("user32.dll")] internal static extern int GetSystemMetricsForDpi(int index, uint dpi);
+        [DllImport("shell32.dll")] internal static extern int SHQueryUserNotificationState(out int state);
+        [DllImport("user32.dll")] internal static extern uint GetGuiResources(IntPtr process, uint flags);
+        internal static bool VisibleWindow(IntPtr window) { return IsWindowVisible(window) && !IsIconic(window); }
         internal static Dictionary<int, int> Parents()
         {
             var result = new Dictionary<int, int>();

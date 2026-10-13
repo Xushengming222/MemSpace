@@ -2,7 +2,7 @@
 
 一个从零编写的 Windows 内存诊断与按需释放工具。C# + WinForms + Windows 原生 API，运行依赖 .NET Framework 4.8（现代 Windows 10 / 11 通常已包含），无需安装 Python、Node 或其他第三方运行时。
 
-1.3.2 将显示器 DPI 声明内置于 EXE，修复单独下载程序时文字被 Windows 放大而模糊的问题。强力释放结果保留在状态栏与日志。包含自动强力释放、持续识别的自动排除、勾选应用的排除名单、随窗口重新排布、应用汇总、活动保护、启动项状态与三档字号。默认正文为 13.5 磅，相当于 100% 屏幕缩放下 18 像素。
+1.4.0 新增游戏 / 全屏保护、托盘低频监测与占用百分比图标。高 DPI 声明内置于 EXE，单独下载也能清晰显示。强力释放结果保留在状态栏与日志。包含自动强力释放、自动排除、勾选应用的排除名单、随窗口重新排布、应用汇总、活动保护、启动项状态与三档字号。默认正文为 13.5 磅，相当于 100% 屏幕缩放下 18 像素。
 
 ## 运行
 
@@ -21,12 +21,15 @@
 - 一键释放当前用户闲置后台程序的工作集。也可明确选择单个程序释放。
 - “强力释放”：手动点击后通过 UAC 启动短时管理员助手，依次回收系统工作集、刷新修改页、清空待机列表。与本地 PCL 2.13.1.1 中分析到的三步操作相同。
 - “自动强力释放”：勾选并保存，或点击“授权管理员”。授权成功后，本次运行复用管理员助手，按相同阈值、持续 45 秒和 15 分钟冷却触发，结果写入日志，不弹出结果窗口。两种自动选项都启用时优先使用已授权的强力模式。
+- 游戏保护默认开启：前台常见游戏、全屏应用或演示模式期间暂停自动强力释放，执行前再次检查。保护结束后重新等待至少 45 秒高占用。手动强力及后台模式仍可使用；两种自动模式都启用时，暂停强力不会临时改用后台。可在设置关闭并保存。
 - 自动识别常见游戏、录屏、Office、开发与创作软件及其安装目录，在后台释放时保护整个进程家族。新启动的应用也会参与识别。可通过“选择应用”搜索和勾选补充排除，无需填写进程名；原有名单继续保留。
 - 常见 Run 注册表项与用户 / 公共启动文件夹列表，显示可识别的 Windows 启用/禁用状态，一键打开 Windows 启动设置和任务管理器。
 - 字号提供 100%、125%、150% 三档，保存后立即更新并记住选择；按显示器 DPI 调整文字、控件和绘图，空间不足时可滚动。
 - 窄窗口使用顶部菜单，操作按钮换行，信息卡片按三列、两列或单列排列。页面保持窗口宽度，内容向下滚动；排行与启动项的宽列在表格内部横向滚动。更改字号保留当前窗口大小。
 - 导出本地诊断报告，包含内存统计、进程排行、启动注册项与解释。
 - 点击标题栏最小化按钮或“收起到托盘”会隐藏窗口并显示托盘图标，不保留最小化的任务栏窗口。双击托盘图标或选择“打开内存管家”恢复。关闭主窗口会退出；托盘菜单也可退出。
+- 托盘图标直接显示内存占用百分比，85% 起橙色、95% 起红色；悬停显示可用内存，右键提供后台释放、强力释放与游戏保护状态。图标只在数字或显示尺寸变化时重绘，替换及退出时释放图标资源。
+- 主窗口每 2 秒采样，收进托盘后改为每 10 秒。隐藏概览不更新控件或重绘，进程排行只在可见时自动扫描；恢复后立即更新。趋势图按实际采样时间显示最近两分钟，自动触发与冷却仍按真实经过时间计算。
 - 可选自动释放：使用率达到设定阈值，持续至少 45 秒才触发，每次尝试至少间隔 15 分钟。
 - 可选登录启动与延迟两分钟的按需释放。登录释放也受阈值和冷却时间约束。
 
@@ -41,6 +44,8 @@
 家族关系根据父进程 PID、创建时间、用户和会话验证，以避免父进程 PID 复用造成误关联。保护会覆盖同一程序路径的其他实例及不同进程名的子进程；不跨系统启动器继续追溯。最近使用记录只在本次工具运行期间采集。
 
 默认排除包含 Java、OBS、Steam、开发工具、部分创作软件、无畏契约、录屏及 Codex。自动识别结合已知程序名与完整目录段（如 steamapps、Epic Games、Riot Games、Adobe）识别应用，不依靠任意包含 game 的名称猜测。无法完整识别所有软件，也不能恢复已退出父进程的家族关系；可以在选择应用中勾选补充。自动识别形成当前扫描的动态保护，不把检测结果不断写进手动名单。关闭自动识别后，基础前台、近期使用和读写保护仍生效。
+
+游戏保护是自动强力执行前的暂停开关，与逐进程排除名单分开。使用 Windows 全屏 / 演示状态、前台窗口客户区与所在显示器边界，以及常见游戏名、安装目录和 Minecraft 的 Java 窗口标题识别。普通带标题栏的最大化窗口不按客户区规则判为全屏，桌面与任务栏被排除。游戏检测无法覆盖所有软件，也无法让系统强力操作遵守应用排除名单；手动强力会影响正在使用的游戏。
 
 “释放选中程序”可包含有窗口的闲置应用，会先说明可能出现短暂卡顿；其他保护规则仍有效。打开进程句柄后会重新验证创建时间、用户归属和关键进程状态，避免 PID 复用误处理。权限不足会跳过或报告失败。
 
@@ -89,6 +94,8 @@ GitHub Actions 在 Windows 上自动检查源码编译和便携包生成；涉�
 
 1.3.2 的测试同时运行带配置版本和移除配置的单 EXE 版本，断言窗口为每显示器 DPI 感知、窗口与绘图表面 DPI 一致，避免把虚拟化的 96 DPI 误判为正常。在 150% 桌面缩放下，两者均报告 144 DPI 与 PerMonitorV2；回归四个页面、三档字号、五种窗口大小、应用选择和托盘。尚未在不同 DPI 的双显示器之间实测切换。
 
+1.4.0 追加游戏识别边界、Minecraft 标题、全屏几何、Shell 状态、暂停后重新计时、旧设置兼容、低频刷新策略和按时间保留的趋势。界面验证使用专门创建的无边框全屏与普通最大化窗口，检查隐藏概览不刷新、恢复后立即更新、图标复用、连续 101 次数字图标更新的 GUI 资源数量，以及释放期间的托盘菜单状态。游戏保护暂停状态使用探针授权会话验证，不在测试中执行系统强力清理。
+
 以下诊断与界面测试参数不会改变设置或释放现有进程：
 
 ```powershell
@@ -108,3 +115,5 @@ Start-Process $app -ArgumentList '--smoke-test "E:\path\ui"' -Wait
 Windows API 依据：[EmptyWorkingSet](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-emptyworkingset)、[Working Set](https://learn.microsoft.com/en-us/windows/win32/memory/working-set)、[GetPerformanceInfo](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getperformanceinfo)、[GlobalMemoryStatusEx](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-globalmemorystatusex)、[IsProcessCritical](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-isprocesscritical)。
 
 DPI 清晰显示依据：[Windows 应用 DPI 感知清单](https://learn.microsoft.com/en-us/windows/win32/hidpi/setting-the-default-dpi-awareness-for-a-process)。EXE 内置清单覆盖单文件下载场景；已有 WinForms 配置继续关闭自动尺寸调整，由应用按实际 DPI 排布控件。
+
+游戏保护与图标尺寸依据：[SHQueryUserNotificationState](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shqueryusernotificationstate)、[通知状态枚举](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ne-shellapi-query_user_notification_state)、[GetClientRect](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getclientrect)、[显示器边界](https://learn.microsoft.com/en-us/windows/win32/gdi/positioning-objects-on-multiple-display-monitors)、[GetSystemMetricsForDpi](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetricsfordpi)。

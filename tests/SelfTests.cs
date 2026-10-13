@@ -31,6 +31,39 @@ namespace MemoryEase
         { return new ProcessRow { Id = 100, Name = "idle-app", OwnerSid = "test-sid", Session = 1, CriticalKnown = true, WorkingSet = 100UL * 1048576 }; }
         private static ProcessRow AppRow(int id, string name, string path, int parent, long creation)
         { var p = Row(); p.Id = id; p.Name = name; p.Path = path; p.ParentId = parent; p.Creation = creation; return p; }
+        private static void MonitoringChecks()
+        {
+            Assert(GameProtection.KnownGame("CS2", "") && GameProtection.KnownGame("custom", @"D:\Games\steamapps\common\Custom\game.exe"), "game protection recognizes known games and exact game installation directories");
+            Assert(!GameProtection.KnownGame("normal", @"D:\Apps\steamapps-tools\normal.exe") && !GameProtection.KnownGame("Code", @"D:\Apps\Code.exe"), "normal applications and similar directory names do not pause automatic strong release");
+            Assert(GameProtection.KnownGame("javaw", @"D:\Java\bin\javaw.exe", "Minecraft 1.21") && !GameProtection.KnownGame("javaw", "", "Java editor"), "windowed Minecraft is recognized without treating every Java application as a game");
+            var monitor = new Native.Rectangle { Left = -1920, Top = 0, Right = 0, Bottom = 1080 };
+            Assert(GameProtection.CoversMonitor(monitor, monitor), "fullscreen detection handles a secondary monitor with negative coordinates");
+            var maximized = monitor; maximized.Top = 32; maximized.Bottom -= 48;
+            Assert(!GameProtection.CoversMonitor(maximized, monitor), "a maximized window with a title bar and taskbar is not fullscreen");
+            Assert(!GameProtection.CoversMonitor(new Native.Rectangle(), new Native.Rectangle()), "invalid monitor geometry cannot report fullscreen");
+            Assert(GameProtection.ShellBusy(2) && GameProtection.ShellBusy(3) && GameProtection.ShellBusy(4) && !GameProtection.ShellBusy(5) && !GameProtection.ShellBusy(7), "shell fullscreen and presentation states pause, while normal and Store-app states do not");
+            var settings = new AppSettings();
+            Assert(settings.GameProtection && GameProtection.PausesStrong(settings, AutomaticMode.Strong, "game") && !GameProtection.PausesStrong(settings, AutomaticMode.Background, "game") && !GameProtection.PausesStrong(settings, AutomaticMode.Strong, ""), "default game protection gates automatic strong release while preserving background mode");
+            settings.GameProtection = false; Assert(!GameProtection.PausesStrong(settings, AutomaticMode.Strong, "game"), "game protection respects its saved off switch");
+            var gate = new PressureGate(); gate.Observe(true, 99, 85, 0);
+            Assert(!gate.Observe(false, 99, 85, 44000) && !gate.Observe(true, 99, 85, 45000) && !gate.Observe(true, 99, 85, 89000) && gate.Observe(true, 99, 85, 90000), "ending game protection requires a fresh 45-second high-pressure period");
+            Assert(RefreshPolicy.Interval(false) == 10000 && RefreshPolicy.Interval(true) == 2000 && !RefreshPolicy.Home(false, 0) && !RefreshPolicy.Home(true, 1) && RefreshPolicy.Home(true, 0), "tray monitoring reduces sampling fivefold and hidden home pages do no drawing updates");
+            Assert(!RefreshPolicy.Processes(false, 1, false, 30000) && !RefreshPolicy.Processes(true, 0, false, 30000) && !RefreshPolicy.Processes(true, 1, true, 30000) && RefreshPolicy.Processes(true, 1, false, 10000), "process enumeration is restricted to a visible ranking page when idle");
+            var history = new MemoryHistory(); history.Add(0, 10); history.Add(2000, 20); history.Add(10000, 30); history.Add(120001, 40);
+            Assert(history.Samples.Count == 3 && history.Samples[0].At == 2000 && history.Samples[1].At == 10000, "memory trends retain two minutes of actual time across a change in refresh interval");
+            history.Add(300000, 50); Assert(history.Samples.Count == 1 && history.Samples[0].Usage == 50, "long monitoring gaps remove stale trend samples");
+            for (int i = 1; i <= 200; i++) history.Add(300000 + i, 60);
+            Assert(history.Samples.Count <= 128, "extra refreshes cannot grow trend storage without a bound");
+            Assert(TrayIcon.Percentage(-5) == 0 && TrayIcon.Percentage(99.6) == 100 && TrayIcon.Percentage(999) == 100 && TrayIcon.Percentage(double.NaN) == 0, "tray percentages stay within 0 to 100 including the three-digit case");
+            Assert(TrayIcon.Background(84) != TrayIcon.Background(85) && TrayIcon.Background(85) != TrayIcon.Background(95), "tray colors distinguish normal, high and critical memory pressure");
+            var serializer = new XmlSerializer(typeof(AppSettings));
+            using (var reader = new StringReader("<AppSettings><Threshold>85</Threshold></AppSettings>"))
+                Assert(((AppSettings)serializer.Deserialize(reader)).GameProtection, "existing settings receive game protection by default");
+            using (var stream = new MemoryStream()) {
+                serializer.Serialize(stream, settings); stream.Position = 0;
+                Assert(!((AppSettings)serializer.Deserialize(stream)).GameProtection, "disabling game protection survives settings serialization");
+            }
+        }
         private sealed class FakeSystemApi : ISystemReleaseApi
         {
             internal readonly List<int> Commands = new List<int>();
@@ -153,6 +186,7 @@ namespace MemoryEase
             Process worker = null;
             string ready = null;
             try {
+                MonitoringChecks();
                 FeatureChecks();
                 StrongChecks();
                 var p = new ReleasePolicy { Sid = "test-sid", Session = 1, SelfId = 50, ForegroundId = 99, ForegroundName = "browser", Exclusions = ReleasePolicy.ParseExclusions("JAVA.EXE; obs64\r\ncustom") };
